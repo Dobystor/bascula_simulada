@@ -396,7 +396,7 @@ def index():
         <img id="toleImg" src="/tole.webp" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); z-index:99999; max-width:80vw; max-height:80vh; border-radius:20px; box-shadow: 0 0 80px 20px rgba(255,0,0,0.8); pointer-events:none; filter: sepia(100%) hue-rotate(-45deg) saturate(500%) contrast(1.5);">
         
         <button id="exitBtn" class="exit-fs" onclick="closeFS()">✕ SALIR (ESC)</button>
-        <button class="theme-toggle" onclick="document.documentElement.classList.toggle('light-mode')">🌓 CAMBIAR TEMA</button>
+        
         <button class="theme-toggle" onclick="document.documentElement.classList.toggle('light-mode')">🌓 CAMBIAR TEMA</button>
         
         <div class="main-container">
@@ -460,6 +460,10 @@ def index():
                     <div class="display-peso" id="peso_txt">000.00</div>
                     <div class="led-container" id="led_cont"></div>
                     <div class="expand-btn-container">
+                        <button id="btnPiP" class="expand-btn" onclick="openPiP()" style="margin-right: 10px;">
+                            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><rect x="2" y="3" width="20" height="14" rx="2"/><rect x="11" y="10" width="9" height="7" rx="1" fill="currentColor" opacity="0.3"/></svg>
+                            PiP
+                        </button>
                         <button id="btnExpandir" class="expand-btn" onclick="openFS()">
                             <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
                             EXPANDIR VISOR
@@ -538,7 +542,96 @@ def index():
                 document.getElementById('btnExpandir').style.display = 'flex'; 
             }
             
-            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeFS(); });
+            // --- PiP (Document Picture-in-Picture API) ---
+            let pipWin = null;
+            let pipPesoEl = null;
+            let pipLedContainer = null;
+            let pipQueue = []; let pipIsRunning = false;
+            
+            async function openPiP() {
+                if (!('documentPictureInPicture' in window)) {
+                    alert('Tu navegador no soporta Document PiP. Usa Chrome 116+ o Edge 116+.');
+                    return;
+                }
+                if (pipWin) { pipWin.focus(); return; }
+                
+                pipWin = await documentPictureInPicture.requestWindow({ width: 520, height: 280 });
+                
+                // Inject styles into PiP window
+                const style = pipWin.document.createElement('style');
+                style.textContent = `
+                    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&display=swap');
+                    * { box-sizing: border-box; margin: 0; padding: 0; }
+                    body {
+                        background: #010b14; overflow: hidden; display: flex; flex-direction: column;
+                        height: 100vh; padding: 12px; font-family: 'Share Tech Mono', monospace;
+                    }
+                    #pip-peso {
+                        font-family: 'VT323', monospace; font-size: 1.6em; text-align: center;
+                        color: #ffffff; text-shadow: 0 0 5px #fff, 0 0 10px #36b0c9, 0 0 20px #0a5da7;
+                        letter-spacing: 5px; flex-shrink: 0; margin-bottom: 8px; line-height: 1;
+                        padding: 6px; background: rgba(0,0,0,0.5); border-radius: 10px;
+                    }
+                    #pip-led {
+                        background: rgba(2,6,12,0.9); border: 1px solid rgba(255,255,255,0.05);
+                        flex-grow: 1; min-height: 0; overflow: hidden; position: relative;
+                        display: flex; align-items: center; border-radius: 16px;
+                        box-shadow: inset 0 0 20px rgba(0,0,0,1);
+                    }
+                    .pip-led-text {
+                        white-space: nowrap; position: absolute; font-family: 'VT323', monospace;
+                        font-size: clamp(3rem, 15vh, 6rem); font-weight: normal; left: 100%;
+                        will-change: transform; color: #ffffff;
+                        text-shadow: 0 0 5px #fff, 0 0 10px #36b0c9, 0 0 20px #0a5da7, 0 0 40px #002b49;
+                        letter-spacing: 4px; z-index: 1;
+                    }
+                    @keyframes marquee { 0% { left: 100%; transform: translateX(0); } 100% { left: 0%; transform: translateX(-100%); } }
+                `;
+                pipWin.document.head.appendChild(style);
+                pipWin.document.title = 'NIXIE PiP';
+                
+                // Build content
+                pipWin.document.body.innerHTML = '<div id="pip-peso">000.00</div><div id="pip-led"></div>';
+                pipPesoEl = pipWin.document.getElementById('pip-peso');
+                pipLedContainer = pipWin.document.getElementById('pip-led');
+                
+                // Clean up on close
+                pipWin.addEventListener('pagehide', () => {
+                    pipWin = null; pipPesoEl = null; pipLedContainer = null;
+                    pipQueue = []; pipIsRunning = false;
+                });
+            }
+            
+            function closePiP() {
+                if (pipWin) { pipWin.close(); pipWin = null; pipPesoEl = null; pipLedContainer = null; }
+            }
+            
+            // PiP marquee queue
+            function pipPlayQueue() {
+                if (pipIsRunning || pipQueue.length === 0 || !pipLedContainer) return;
+                pipIsRunning = true;
+                const m = pipQueue.shift();
+                const span = pipWin.document.createElement('span');
+                span.className = 'pip-led-text';
+                let baseColor = m.color === 'white' ? '#FFFFFF' : m.color;
+                span.style.color = '#FFFFFF';
+                span.style.textShadow = '0 0 5px #FFFFFF, 0 0 10px ' + baseColor + ', 0 0 20px ' + baseColor + ', 0 0 40px ' + baseColor;
+                span.innerText = m.text || " ";
+                pipLedContainer.innerHTML = '';
+                pipLedContainer.appendChild(span);
+                let dur = Math.max(4.0, (m.text || " ").length * 0.25);
+                span.style.animation = 'marquee ' + dur + 's linear forwards';
+                let to;
+                const onEnd = () => { if(to) clearTimeout(to); pipIsRunning = false; setTimeout(pipPlayQueue, 150); };
+                span.addEventListener('animationend', onEnd);
+                to = setTimeout(onEnd, (dur * 1000) + 1200);
+            }
+            
+            document.addEventListener('keydown', (e) => { 
+                if (e.key === 'Escape') {
+                    if (document.getElementById('panel_monitor').classList.contains('fullscreen-mode')) closeFS();
+                }
+            });
             
             function updateUI() {
                 const m = document.getElementById('modo').value;
@@ -619,6 +712,11 @@ def index():
                     
                     document.getElementById('peso_txt').innerText = d.peso_visual;
                     
+                    // Update PiP peso
+                    if (pipWin && pipPesoEl) {
+                        pipPesoEl.innerText = d.peso_visual;
+                    }
+                    
                     let lb = document.getElementById('log_bas');
                     let ls = document.getElementById('log_sem');
                     let autoScrollBas = (lb.scrollTop + lb.clientHeight) >= (lb.scrollHeight - 20);
@@ -649,10 +747,12 @@ def index():
                         d.historial_semaforo.forEach(m => {
                             if (m.id > lastId && m.text !== "") {
                                 queue.push({ text: m.text, color: m.color });
+                                if (pipWin) pipQueue.push({ text: m.text, color: m.color });
                                 lastId = m.id;
                             }
                         });
                         playQueue();
+                        if (pipWin) pipPlayQueue();
                     }
                 } catch(e) {}
                 setTimeout(tick, 500);
