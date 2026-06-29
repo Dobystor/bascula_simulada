@@ -549,16 +549,37 @@ def index():
             let pipQueue = []; let pipIsRunning = false;
             
             async function openPiP() {
-                if (!('documentPictureInPicture' in window)) {
-                    alert('Tu navegador no soporta Document PiP. Usa Chrome 116+ o Edge 116+.');
-                    return;
+                // Intentar Document PiP (requiere HTTPS o localhost)
+                if ('documentPictureInPicture' in window) {
+                    try {
+                        if (pipWin) { pipWin.focus(); return; }
+                        pipWin = await documentPictureInPicture.requestWindow({ width: 520, height: 340 });
+                        buildPipContent(pipWin);
+                        return;
+                    } catch(e) { /* fallback abajo */ }
                 }
-                if (pipWin) { pipWin.focus(); return; }
                 
-                pipWin = await documentPictureInPicture.requestWindow({ width: 520, height: 340 });
+                // Fallback: popup window (funciona en HTTP)
+                if (pipWin && !pipWin.closed) { pipWin.focus(); return; }
+                pipWin = window.open('', 'nixie_pip', 'width=520,height=340,top=80,left=' + (screen.width - 560) + ',toolbar=no,menubar=no,scrollbars=no,resizable=yes,status=no,location=no');
+                if (!pipWin) { alert('Permite popups para esta página.'); return; }
+                pipWin.document.open();
+                pipWin.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"></head><body></body></html>');
+                pipWin.document.close();
+                buildPipContent(pipWin);
                 
-                // Inject styles into PiP window
-                const style = pipWin.document.createElement('style');
+                // Polling para detectar cierre del popup
+                const pollClose = setInterval(() => {
+                    if (!pipWin || pipWin.closed) {
+                        clearInterval(pollClose);
+                        pipWin = null; pipPesoEl = null; pipLedContainer = null;
+                        pipQueue = []; pipIsRunning = false;
+                    }
+                }, 500);
+            }
+            
+            function buildPipContent(win) {
+                const style = win.document.createElement('style');
                 style.textContent = `
                     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&display=swap');
                     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -595,7 +616,6 @@ def index():
                     }
                     @keyframes marquee { 0% { left: 100%; transform: translateX(0); } 100% { left: 0%; transform: translateX(-100%); } }
                     
-                    /* Config Panel */
                     #pip-config {
                         display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
                         background: rgba(1,11,20,0.97); z-index: 10; padding: 14px;
@@ -627,23 +647,22 @@ def index():
                     }
                     #pip-back-btn:hover { border-color: #36b0c9; color: #36b0c9; }
                 `;
-                pipWin.document.head.appendChild(style);
-                pipWin.document.title = 'NIXIE PiP';
+                win.document.head.appendChild(style);
+                win.document.title = 'NIXIE PiP';
                 
-                // Build content
-                pipWin.document.body.innerHTML = `
+                win.document.body.innerHTML = `
                     <div id="pip-top">
                         <div id="pip-peso">000.00</div>
-                        <button id="pip-cfg-btn">⚙ CONFIG</button>
+                        <button id="pip-cfg-btn">\\u2699 CONFIG</button>
                     </div>
                     <div id="pip-led"></div>
                     <div id="pip-config">
-                        <button id="pip-back-btn">← VOLVER</button>
-                        <h3>⚙ CONFIGURACIÓN</h3>
+                        <button id="pip-back-btn">\\u2190 VOLVER</button>
+                        <h3>\\u2699 CONFIGURACI\\u00d3N</h3>
                         <div class="pip-field">
                             <label>Modo de pesaje</label>
                             <select id="pip-modo">
-                                <option value="auto">AUTOMÁTICO</option>
+                                <option value="auto">AUTOM\\u00c1TICO</option>
                                 <option value="manual">MANUAL</option>
                             </select>
                         </div>
@@ -653,11 +672,11 @@ def index():
                         </div>
                         <div class="pip-row" id="pip-auto-fields">
                             <div class="pip-field">
-                                <label>Mínimo</label>
+                                <label>M\\u00ednimo</label>
                                 <input type="number" id="pip-rmin" value="60">
                             </div>
                             <div class="pip-field">
-                                <label>Máximo</label>
+                                <label>M\\u00e1ximo</label>
                                 <input type="number" id="pip-rmax" value="95">
                             </div>
                         </div>
@@ -669,25 +688,24 @@ def index():
                     </div>
                 `;
                 
-                pipPesoEl = pipWin.document.getElementById('pip-peso');
-                pipLedContainer = pipWin.document.getElementById('pip-led');
+                pipPesoEl = win.document.getElementById('pip-peso');
+                pipLedContainer = win.document.getElementById('pip-led');
                 
-                // Config panel logic inside PiP
-                const cfgBtn = pipWin.document.getElementById('pip-cfg-btn');
-                const cfgPanel = pipWin.document.getElementById('pip-config');
-                const backBtn = pipWin.document.getElementById('pip-back-btn');
-                const pipModo = pipWin.document.getElementById('pip-modo');
-                const pipManualField = pipWin.document.getElementById('pip-manual-field');
-                const pipAutoFields = pipWin.document.getElementById('pip-auto-fields');
-                const pipSaveBtn = pipWin.document.getElementById('pip-save-btn');
+                // Config panel logic
+                const cfgBtn = win.document.getElementById('pip-cfg-btn');
+                const cfgPanel = win.document.getElementById('pip-config');
+                const backBtn = win.document.getElementById('pip-back-btn');
+                const pipModo = win.document.getElementById('pip-modo');
+                const pipManualField = win.document.getElementById('pip-manual-field');
+                const pipAutoFields = win.document.getElementById('pip-auto-fields');
+                const pipSaveBtn = win.document.getElementById('pip-save-btn');
                 
-                // Load current config into PiP fields
                 function loadPipConfig() {
                     pipModo.value = document.getElementById('modo').value;
-                    pipWin.document.getElementById('pip-manual').value = document.getElementById('manual').value;
-                    pipWin.document.getElementById('pip-rmin').value = document.getElementById('rmin').value;
-                    pipWin.document.getElementById('pip-rmax').value = document.getElementById('rmax').value;
-                    pipWin.document.getElementById('pip-inter').value = document.getElementById('inter').value;
+                    win.document.getElementById('pip-manual').value = document.getElementById('manual').value;
+                    win.document.getElementById('pip-rmin').value = document.getElementById('rmin').value;
+                    win.document.getElementById('pip-rmax').value = document.getElementById('rmax').value;
+                    win.document.getElementById('pip-inter').value = document.getElementById('inter').value;
                     togglePipModo();
                 }
                 
@@ -703,13 +721,13 @@ def index():
                 
                 pipSaveBtn.addEventListener('click', async () => {
                     const modo = pipModo.value;
-                    const manual_val = parseInt(pipWin.document.getElementById('pip-manual').value);
-                    const min = parseInt(pipWin.document.getElementById('pip-rmin').value);
-                    const max = parseInt(pipWin.document.getElementById('pip-rmax').value);
-                    const inter = parseFloat(pipWin.document.getElementById('pip-inter').value);
+                    const manual_val = parseInt(win.document.getElementById('pip-manual').value);
+                    const min = parseInt(win.document.getElementById('pip-rmin').value);
+                    const max = parseInt(win.document.getElementById('pip-rmax').value);
+                    const inter = parseFloat(win.document.getElementById('pip-inter').value);
                     
                     if (modo === 'auto' && min > max) {
-                        pipSaveBtn.innerText = '⚠ MIN > MAX';
+                        pipSaveBtn.innerText = '\\u26a0 MIN > MAX';
                         setTimeout(() => { pipSaveBtn.innerText = 'APLICAR CAMBIOS'; }, 2000);
                         return;
                     }
@@ -718,7 +736,6 @@ def index():
                     const res = await fetch('/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(p) });
                     
                     if (res.ok) {
-                        // Sync main page controls
                         document.getElementById('modo').value = modo;
                         document.getElementById('manual').value = manual_val;
                         document.getElementById('rmin').value = min;
@@ -731,8 +748,8 @@ def index():
                     }
                 });
                 
-                // Clean up on close
-                pipWin.addEventListener('pagehide', () => {
+                // Clean up on close (Document PiP)
+                win.addEventListener('pagehide', () => {
                     pipWin = null; pipPesoEl = null; pipLedContainer = null;
                     pipQueue = []; pipIsRunning = false;
                 });
@@ -744,7 +761,7 @@ def index():
             
             // PiP marquee queue
             function pipPlayQueue() {
-                if (pipIsRunning || pipQueue.length === 0 || !pipLedContainer) return;
+                if (pipIsRunning || pipQueue.length === 0 || !pipLedContainer || !pipWin || pipWin.closed) return;
                 pipIsRunning = true;
                 const m = pipQueue.shift();
                 const span = pipWin.document.createElement('span');
@@ -849,7 +866,7 @@ def index():
                     document.getElementById('peso_txt').innerText = d.peso_visual;
                     
                     // Update PiP peso
-                    if (pipWin && pipPesoEl) {
+                    if (pipWin && !pipWin.closed && pipPesoEl) {
                         pipPesoEl.innerText = d.peso_visual;
                     }
                     
@@ -883,12 +900,12 @@ def index():
                         d.historial_semaforo.forEach(m => {
                             if (m.id > lastId && m.text !== "") {
                                 queue.push({ text: m.text, color: m.color });
-                                if (pipWin) pipQueue.push({ text: m.text, color: m.color });
+                                if (pipWin && !pipWin.closed) pipQueue.push({ text: m.text, color: m.color });
                                 lastId = m.id;
                             }
                         });
                         playQueue();
-                        if (pipWin) pipPlayQueue();
+                        if (pipWin && !pipWin.closed) pipPlayQueue();
                     }
                 } catch(e) {}
                 setTimeout(tick, 500);
