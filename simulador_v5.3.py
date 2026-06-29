@@ -6,6 +6,8 @@ import random
 import re
 import os
 import uuid
+import ssl
+import subprocess
 from datetime import datetime
 import uvicorn
 from fastapi import FastAPI, Request
@@ -545,12 +547,137 @@ def index():
             // --- PiP ---
             
             async function openPiP() {
-                // Abrir /pip como ventana independiente
-                const pipCheck = window.open('', 'nixie_pip');
-                if (pipCheck && !pipCheck.closed && pipCheck.location.href.includes('/pip')) {
-                    pipCheck.focus(); return;
+                // Document Picture-in-Picture API (always-on-top nativo)
+                if ('documentPictureInPicture' in window) {
+                    try {
+                        const pipWin = await documentPictureInPicture.requestWindow({ width: 520, height: 340 });
+                        
+                        // Copiar estilos
+                        const style = pipWin.document.createElement('style');
+                        style.textContent = `
+                            @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&display=swap');
+                            * { box-sizing: border-box; margin: 0; padding: 0; }
+                            body { background: #010b14; overflow: hidden; display: flex; flex-direction: column;
+                                height: 100vh; padding: 10px; font-family: 'Share Tech Mono', monospace; color: #c1c5c8; }
+                            #pip-top { display: flex; align-items: center; gap: 10px; flex-shrink: 0; margin-bottom: 6px; }
+                            #pip-peso { font-family: 'VT323', monospace; font-size: 1.5em; color: #ffffff;
+                                text-shadow: 0 0 5px #fff, 0 0 10px #36b0c9, 0 0 20px #0a5da7;
+                                letter-spacing: 4px; line-height: 1; padding: 4px 10px; background: rgba(0,0,0,0.5);
+                                border-radius: 8px; flex: 1; text-align: center; }
+                            #pip-cfg-btn { background: rgba(54,176,201,0.1); color: #36b0c9; border: 1px solid rgba(54,176,201,0.4);
+                                padding: 5px 10px; border-radius: 4px; cursor: pointer; font-family: 'Share Tech Mono';
+                                font-size: 0.75em; font-weight: bold; letter-spacing: 1px; transition: all 0.2s; }
+                            #pip-cfg-btn:hover { background: rgba(54,176,201,0.3); }
+                            #pip-led { background: rgba(2,6,12,0.9); border: 1px solid rgba(255,255,255,0.05);
+                                flex-grow: 1; min-height: 0; overflow: hidden; position: relative;
+                                display: flex; align-items: center; border-radius: 16px; box-shadow: inset 0 0 20px rgba(0,0,0,1); }
+                            .pip-led-text { white-space: nowrap; position: absolute; font-family: 'VT323', monospace;
+                                font-size: clamp(3rem, 15vh, 6rem); left: 100%; color: #ffffff;
+                                text-shadow: 0 0 5px #fff, 0 0 10px #36b0c9, 0 0 20px #0a5da7, 0 0 40px #002b49;
+                                letter-spacing: 4px; z-index: 1; }
+                            @keyframes marquee { 0% { left: 100%; transform: translateX(0); } 100% { left: 0%; transform: translateX(-100%); } }
+                            #pip-config { display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+                                background: rgba(1,11,20,0.97); z-index: 10; padding: 14px; flex-direction: column; gap: 10px; overflow-y: auto; }
+                            #pip-config.open { display: flex; }
+                            #pip-config h3 { color: #36b0c9; font-size: 0.9em; letter-spacing: 2px; }
+                            .pip-field { display: flex; flex-direction: column; gap: 3px; }
+                            .pip-field label { font-size: 0.65em; color: #c1c5c8; letter-spacing: 1px; text-transform: uppercase; }
+                            .pip-field select, .pip-field input { background: rgba(0,0,0,0.6); border: 1px solid rgba(54,176,201,0.3);
+                                color: #36b0c9; font-family: 'Share Tech Mono'; font-size: 0.85em; padding: 6px 8px; border-radius: 4px; outline: none; width: 100%; }
+                            .pip-row { display: flex; gap: 8px; }
+                            .pip-row .pip-field { flex: 1; }
+                            #pip-save-btn { background: rgba(54,176,201,0.15); color: #36b0c9; border: 1px solid rgba(54,176,201,0.5);
+                                padding: 8px; border-radius: 4px; cursor: pointer; font-family: 'Share Tech Mono';
+                                font-size: 0.85em; font-weight: bold; letter-spacing: 2px; margin-top: auto; transition: all 0.2s; }
+                            #pip-save-btn:hover { background: rgba(54,176,201,0.3); }
+                            #pip-back-btn { background: transparent; color: #c1c5c8; border: 1px solid rgba(255,255,255,0.15);
+                                padding: 6px 10px; border-radius: 4px; cursor: pointer; font-family: 'Share Tech Mono';
+                                font-size: 0.7em; align-self: flex-end; transition: all 0.2s; }
+                            #pip-back-btn:hover { border-color: #36b0c9; color: #36b0c9; }
+                        `;
+                        pipWin.document.head.appendChild(style);
+                        pipWin.document.title = 'NIXIE PiP';
+                        pipWin.document.body.innerHTML = `
+                            <div id="pip-top"><div id="pip-peso">000.00</div><button id="pip-cfg-btn">⚙ CONFIG</button></div>
+                            <div id="pip-led"></div>
+                            <div id="pip-config">
+                                <button id="pip-back-btn">← VOLVER</button>
+                                <h3>⚙ CONFIGURACIÓN</h3>
+                                <div class="pip-field"><label>Modo</label><select id="pip-modo"><option value="auto">AUTOMÁTICO</option><option value="manual">MANUAL</option></select></div>
+                                <div class="pip-field" id="pip-manual-field" style="display:none;"><label>Peso manual</label><input type="number" id="pip-manual" value="70"></div>
+                                <div class="pip-row" id="pip-auto-fields"><div class="pip-field"><label>Mínimo</label><input type="number" id="pip-rmin" value="60"></div><div class="pip-field"><label>Máximo</label><input type="number" id="pip-rmax" value="95"></div></div>
+                                <div class="pip-field"><label>Intervalo (seg)</label><input type="number" id="pip-inter" step="0.1" value="1.0"></div>
+                                <button id="pip-save-btn">APLICAR CAMBIOS</button>
+                            </div>
+                        `;
+                        
+                        const pPeso = pipWin.document.getElementById('pip-peso');
+                        const pLed = pipWin.document.getElementById('pip-led');
+                        const pCfg = pipWin.document.getElementById('pip-config');
+                        const pModo = pipWin.document.getElementById('pip-modo');
+                        const pManualF = pipWin.document.getElementById('pip-manual-field');
+                        const pAutoF = pipWin.document.getElementById('pip-auto-fields');
+                        
+                        pipWin.document.getElementById('pip-cfg-btn').addEventListener('click', () => {
+                            pModo.value = document.getElementById('modo').value;
+                            pipWin.document.getElementById('pip-manual').value = document.getElementById('manual').value;
+                            pipWin.document.getElementById('pip-rmin').value = document.getElementById('rmin').value;
+                            pipWin.document.getElementById('pip-rmax').value = document.getElementById('rmax').value;
+                            pipWin.document.getElementById('pip-inter').value = document.getElementById('inter').value;
+                            pManualF.style.display = pModo.value==='manual'?'flex':'none';
+                            pAutoF.style.display = pModo.value==='manual'?'none':'flex';
+                            pCfg.classList.add('open');
+                        });
+                        pipWin.document.getElementById('pip-back-btn').addEventListener('click', () => pCfg.classList.remove('open'));
+                        pModo.addEventListener('change', () => {
+                            pManualF.style.display = pModo.value==='manual'?'flex':'none';
+                            pAutoF.style.display = pModo.value==='manual'?'none':'flex';
+                        });
+                        pipWin.document.getElementById('pip-save-btn').addEventListener('click', async () => {
+                            const btn = pipWin.document.getElementById('pip-save-btn');
+                            const modo = pModo.value;
+                            const mv = parseInt(pipWin.document.getElementById('pip-manual').value);
+                            const mn = parseInt(pipWin.document.getElementById('pip-rmin').value);
+                            const mx = parseInt(pipWin.document.getElementById('pip-rmax').value);
+                            const it = parseFloat(pipWin.document.getElementById('pip-inter').value);
+                            if(modo==='auto'&&mn>mx){btn.innerText='⚠ MIN>MAX';setTimeout(()=>btn.innerText='APLICAR CAMBIOS',2000);return;}
+                            const r = await fetch('/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({modo,valor_manual:mv,rango:[mn,mx],intervalo_bascula:it})});
+                            if(r.ok){document.getElementById('modo').value=modo;document.getElementById('manual').value=mv;document.getElementById('rmin').value=mn;document.getElementById('rmax').value=mx;document.getElementById('inter').value=it;updateUI();btn.innerText='>> GUARDADO <<';setTimeout(()=>{btn.innerText='APLICAR CAMBIOS';pCfg.classList.remove('open');},1200);}
+                        });
+                        
+                        // Loop de datos para PiP
+                        let pQueue=[], pRunning=false, pLastId=-1, pFirst=true;
+                        async function pTick(){
+                            try{
+                                const r=await fetch('/status');const d=await r.json();
+                                pPeso.innerText=d.peso_visual;
+                                if(pFirst){pFirst=false;pLastId=d.historial_semaforo&&d.historial_semaforo.length>0?d.historial_semaforo[d.historial_semaforo.length-1].id:-1;}
+                                else if(d.historial_semaforo){
+                                    let ids=d.historial_semaforo.map(x=>x.id);
+                                    if(ids.length>0&&pLastId>Math.max(...ids))pLastId=-1;
+                                    d.historial_semaforo.forEach(m=>{if(m.id>pLastId&&m.text!==''){pQueue.push({text:m.text,color:m.color});pLastId=m.id;}});
+                                    pPlay();
+                                }
+                            }catch(e){}
+                            setTimeout(pTick,500);
+                        }
+                        function pPlay(){
+                            if(pRunning||pQueue.length===0)return;pRunning=true;
+                            const m=pQueue.shift();const span=pipWin.document.createElement('span');span.className='pip-led-text';
+                            let bc=m.color==='white'?'#FFFFFF':m.color;
+                            span.style.color='#FFFFFF';span.style.textShadow='0 0 5px #FFF,0 0 10px '+bc+',0 0 20px '+bc+',0 0 40px '+bc;
+                            span.innerText=m.text||' ';pLed.innerHTML='';pLed.appendChild(span);
+                            let dur=Math.max(4,(m.text||' ').length*0.25);span.style.animation='marquee '+dur+'s linear forwards';
+                            let to;const onEnd=()=>{if(to)clearTimeout(to);pRunning=false;setTimeout(pPlay,150);};
+                            span.addEventListener('animationend',onEnd);to=setTimeout(onEnd,(dur*1000)+1200);
+                        }
+                        pTick();
+                        return;
+                    } catch(e) { console.warn('Document PiP failed:', e); }
                 }
-                window.open('/pip', 'nixie_pip', 'width=520,height=340,top=80,left=' + (screen.width - 560) + ',toolbar=no,menubar=no,scrollbars=no,resizable=yes,status=no,location=no');
+                
+                // Fallback: abrir /pip en popup (para HTTP)
+                window.open('/pip', 'nixie_pip', 'width=520,height=340,top=80,left='+(screen.width-560)+',toolbar=no,menubar=no,scrollbars=no,resizable=yes,status=no,location=no');
             }
             
             document.addEventListener('keydown', (e) => { 
@@ -1223,7 +1350,45 @@ def server_semaforo():
             threading.Thread(target=atender_cliente_semaforo, args=(conn, addr), daemon=True).start()
         except: pass
 
+def generate_self_signed_cert():
+    """Genera un certificado autofirmado si no existe."""
+    cert_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".certs")
+    cert_file = os.path.join(cert_dir, "cert.pem")
+    key_file = os.path.join(cert_dir, "key.pem")
+    
+    if os.path.exists(cert_file) and os.path.exists(key_file):
+        return cert_file, key_file
+    
+    os.makedirs(cert_dir, exist_ok=True)
+    
+    try:
+        ip = get_local_ip()
+        subprocess.run([
+            "openssl", "req", "-x509", "-newkey", "rsa:2048",
+            "-keyout", key_file, "-out", cert_file,
+            "-days", "365", "-nodes",
+            "-subj", f"/CN={ip}",
+            "-addext", f"subjectAltName=IP:{ip},IP:127.0.0.1,DNS:localhost"
+        ], check=True, capture_output=True)
+        print(f"[SSL] Certificado generado en {cert_dir}")
+    except Exception as e:
+        print(f"[SSL] No se pudo generar certificado: {e}")
+        print("[SSL] Arrancando sin HTTPS (PiP nativo no disponible)")
+        return None, None
+    
+    return cert_file, key_file
+
 if __name__ == "__main__":
     threading.Thread(target=server_bascula, daemon=True).start()
     threading.Thread(target=server_semaforo, daemon=True).start()
-    uvicorn.run(app, host="0.0.0.0", port=WEB_PORT, log_level="error")
+    
+    cert_file, key_file = generate_self_signed_cert()
+    
+    if cert_file and key_file:
+        print(f"[HTTPS] https://{get_local_ip()}:{WEB_PORT}")
+        print(f"[HTTPS] La primera vez, acepta el certificado en el navegador.")
+        uvicorn.run(app, host="0.0.0.0", port=WEB_PORT, log_level="error",
+                    ssl_keyfile=key_file, ssl_certfile=cert_file)
+    else:
+        print(f"[HTTP] http://{get_local_ip()}:{WEB_PORT}")
+        uvicorn.run(app, host="0.0.0.0", port=WEB_PORT, log_level="error")

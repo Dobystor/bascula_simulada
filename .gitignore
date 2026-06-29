@@ -82,6 +82,9 @@ desktop.ini
 *.swp
 *.swo
 
+# Certificados SSL autogenerados
+.certs/
+
 # Expo
 .expo/
 yahtzee-app/.expo/
