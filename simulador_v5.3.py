@@ -542,242 +542,15 @@ def index():
                 document.getElementById('btnExpandir').style.display = 'flex'; 
             }
             
-            // --- PiP (Document Picture-in-Picture API) ---
-            let pipWin = null;
-            let pipPesoEl = null;
-            let pipLedContainer = null;
-            let pipQueue = []; let pipIsRunning = false;
+            // --- PiP ---
             
             async function openPiP() {
-                // Intentar Document PiP (requiere HTTPS o localhost)
-                if ('documentPictureInPicture' in window) {
-                    try {
-                        if (pipWin) { pipWin.focus(); return; }
-                        pipWin = await documentPictureInPicture.requestWindow({ width: 520, height: 340 });
-                        buildPipContent(pipWin);
-                        return;
-                    } catch(e) { /* fallback abajo */ }
+                // Abrir /pip como ventana independiente
+                const pipCheck = window.open('', 'nixie_pip');
+                if (pipCheck && !pipCheck.closed && pipCheck.location.href.includes('/pip')) {
+                    pipCheck.focus(); return;
                 }
-                
-                // Fallback: popup window (funciona en HTTP)
-                if (pipWin && !pipWin.closed) { pipWin.focus(); return; }
-                pipWin = window.open('', 'nixie_pip', 'width=520,height=340,top=80,left=' + (screen.width - 560) + ',toolbar=no,menubar=no,scrollbars=no,resizable=yes,status=no,location=no');
-                if (!pipWin) { alert('Permite popups para esta página.'); return; }
-                pipWin.document.open();
-                pipWin.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"></head><body></body></html>');
-                pipWin.document.close();
-                buildPipContent(pipWin);
-                
-                // Polling para detectar cierre del popup
-                const pollClose = setInterval(() => {
-                    if (!pipWin || pipWin.closed) {
-                        clearInterval(pollClose);
-                        pipWin = null; pipPesoEl = null; pipLedContainer = null;
-                        pipQueue = []; pipIsRunning = false;
-                    }
-                }, 500);
-            }
-            
-            function buildPipContent(win) {
-                const style = win.document.createElement('style');
-                style.textContent = `
-                    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&display=swap');
-                    * { box-sizing: border-box; margin: 0; padding: 0; }
-                    body {
-                        background: #010b14; overflow: hidden; display: flex; flex-direction: column;
-                        height: 100vh; padding: 10px; font-family: 'Share Tech Mono', monospace; color: #c1c5c8;
-                    }
-                    #pip-top { display: flex; align-items: center; gap: 10px; flex-shrink: 0; margin-bottom: 6px; }
-                    #pip-peso {
-                        font-family: 'VT323', monospace; font-size: 1.5em;
-                        color: #ffffff; text-shadow: 0 0 5px #fff, 0 0 10px #36b0c9, 0 0 20px #0a5da7;
-                        letter-spacing: 4px; line-height: 1;
-                        padding: 4px 10px; background: rgba(0,0,0,0.5); border-radius: 8px; flex: 1;
-                        text-align: center;
-                    }
-                    #pip-cfg-btn {
-                        background: rgba(54,176,201,0.1); color: #36b0c9; border: 1px solid rgba(54,176,201,0.4);
-                        padding: 5px 10px; border-radius: 4px; cursor: pointer; font-family: 'Share Tech Mono';
-                        font-size: 0.75em; font-weight: bold; letter-spacing: 1px; transition: all 0.2s;
-                    }
-                    #pip-cfg-btn:hover { background: rgba(54,176,201,0.3); border-color: #36b0c9; }
-                    #pip-led {
-                        background: rgba(2,6,12,0.9); border: 1px solid rgba(255,255,255,0.05);
-                        flex-grow: 1; min-height: 0; overflow: hidden; position: relative;
-                        display: flex; align-items: center; border-radius: 16px;
-                        box-shadow: inset 0 0 20px rgba(0,0,0,1);
-                    }
-                    .pip-led-text {
-                        white-space: nowrap; position: absolute; font-family: 'VT323', monospace;
-                        font-size: clamp(3rem, 15vh, 6rem); font-weight: normal; left: 100%;
-                        will-change: transform; color: #ffffff;
-                        text-shadow: 0 0 5px #fff, 0 0 10px #36b0c9, 0 0 20px #0a5da7, 0 0 40px #002b49;
-                        letter-spacing: 4px; z-index: 1;
-                    }
-                    @keyframes marquee { 0% { left: 100%; transform: translateX(0); } 100% { left: 0%; transform: translateX(-100%); } }
-                    
-                    #pip-config {
-                        display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-                        background: rgba(1,11,20,0.97); z-index: 10; padding: 14px;
-                        flex-direction: column; gap: 10px; overflow-y: auto;
-                    }
-                    #pip-config.open { display: flex; }
-                    #pip-config h3 { color: #36b0c9; font-size: 0.9em; letter-spacing: 2px; margin-bottom: 4px; }
-                    .pip-field { display: flex; flex-direction: column; gap: 3px; }
-                    .pip-field label { font-size: 0.65em; color: #c1c5c8; letter-spacing: 1px; text-transform: uppercase; }
-                    .pip-field select, .pip-field input {
-                        background: rgba(0,0,0,0.6); border: 1px solid rgba(54,176,201,0.3); color: #36b0c9;
-                        font-family: 'Share Tech Mono'; font-size: 0.85em; padding: 6px 8px; border-radius: 4px;
-                        outline: none; width: 100%;
-                    }
-                    .pip-field select:focus, .pip-field input:focus { border-color: #36b0c9; }
-                    .pip-row { display: flex; gap: 8px; }
-                    .pip-row .pip-field { flex: 1; }
-                    #pip-save-btn {
-                        background: rgba(54,176,201,0.15); color: #36b0c9; border: 1px solid rgba(54,176,201,0.5);
-                        padding: 8px; border-radius: 4px; cursor: pointer; font-family: 'Share Tech Mono';
-                        font-size: 0.85em; font-weight: bold; letter-spacing: 2px; margin-top: auto;
-                        transition: all 0.2s;
-                    }
-                    #pip-save-btn:hover { background: rgba(54,176,201,0.3); }
-                    #pip-back-btn {
-                        background: transparent; color: #c1c5c8; border: 1px solid rgba(255,255,255,0.15);
-                        padding: 6px 10px; border-radius: 4px; cursor: pointer; font-family: 'Share Tech Mono';
-                        font-size: 0.7em; align-self: flex-end; transition: all 0.2s;
-                    }
-                    #pip-back-btn:hover { border-color: #36b0c9; color: #36b0c9; }
-                `;
-                win.document.head.appendChild(style);
-                win.document.title = 'NIXIE PiP';
-                
-                win.document.body.innerHTML = `
-                    <div id="pip-top">
-                        <div id="pip-peso">000.00</div>
-                        <button id="pip-cfg-btn">\\u2699 CONFIG</button>
-                    </div>
-                    <div id="pip-led"></div>
-                    <div id="pip-config">
-                        <button id="pip-back-btn">\\u2190 VOLVER</button>
-                        <h3>\\u2699 CONFIGURACI\\u00d3N</h3>
-                        <div class="pip-field">
-                            <label>Modo de pesaje</label>
-                            <select id="pip-modo">
-                                <option value="auto">AUTOM\\u00c1TICO</option>
-                                <option value="manual">MANUAL</option>
-                            </select>
-                        </div>
-                        <div class="pip-field" id="pip-manual-field" style="display:none;">
-                            <label>Peso manual (tons)</label>
-                            <input type="number" id="pip-manual" value="70">
-                        </div>
-                        <div class="pip-row" id="pip-auto-fields">
-                            <div class="pip-field">
-                                <label>M\\u00ednimo</label>
-                                <input type="number" id="pip-rmin" value="60">
-                            </div>
-                            <div class="pip-field">
-                                <label>M\\u00e1ximo</label>
-                                <input type="number" id="pip-rmax" value="95">
-                            </div>
-                        </div>
-                        <div class="pip-field">
-                            <label>Intervalo datos (seg)</label>
-                            <input type="number" id="pip-inter" step="0.1" value="1.0">
-                        </div>
-                        <button id="pip-save-btn">APLICAR CAMBIOS</button>
-                    </div>
-                `;
-                
-                pipPesoEl = win.document.getElementById('pip-peso');
-                pipLedContainer = win.document.getElementById('pip-led');
-                
-                // Config panel logic
-                const cfgBtn = win.document.getElementById('pip-cfg-btn');
-                const cfgPanel = win.document.getElementById('pip-config');
-                const backBtn = win.document.getElementById('pip-back-btn');
-                const pipModo = win.document.getElementById('pip-modo');
-                const pipManualField = win.document.getElementById('pip-manual-field');
-                const pipAutoFields = win.document.getElementById('pip-auto-fields');
-                const pipSaveBtn = win.document.getElementById('pip-save-btn');
-                
-                function loadPipConfig() {
-                    pipModo.value = document.getElementById('modo').value;
-                    win.document.getElementById('pip-manual').value = document.getElementById('manual').value;
-                    win.document.getElementById('pip-rmin').value = document.getElementById('rmin').value;
-                    win.document.getElementById('pip-rmax').value = document.getElementById('rmax').value;
-                    win.document.getElementById('pip-inter').value = document.getElementById('inter').value;
-                    togglePipModo();
-                }
-                
-                function togglePipModo() {
-                    const isManual = pipModo.value === 'manual';
-                    pipManualField.style.display = isManual ? 'flex' : 'none';
-                    pipAutoFields.style.display = isManual ? 'none' : 'flex';
-                }
-                
-                cfgBtn.addEventListener('click', () => { loadPipConfig(); cfgPanel.classList.add('open'); });
-                backBtn.addEventListener('click', () => { cfgPanel.classList.remove('open'); });
-                pipModo.addEventListener('change', togglePipModo);
-                
-                pipSaveBtn.addEventListener('click', async () => {
-                    const modo = pipModo.value;
-                    const manual_val = parseInt(win.document.getElementById('pip-manual').value);
-                    const min = parseInt(win.document.getElementById('pip-rmin').value);
-                    const max = parseInt(win.document.getElementById('pip-rmax').value);
-                    const inter = parseFloat(win.document.getElementById('pip-inter').value);
-                    
-                    if (modo === 'auto' && min > max) {
-                        pipSaveBtn.innerText = '\\u26a0 MIN > MAX';
-                        setTimeout(() => { pipSaveBtn.innerText = 'APLICAR CAMBIOS'; }, 2000);
-                        return;
-                    }
-                    
-                    const p = { modo, valor_manual: manual_val, rango: [min, max], intervalo_bascula: inter };
-                    const res = await fetch('/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(p) });
-                    
-                    if (res.ok) {
-                        document.getElementById('modo').value = modo;
-                        document.getElementById('manual').value = manual_val;
-                        document.getElementById('rmin').value = min;
-                        document.getElementById('rmax').value = max;
-                        document.getElementById('inter').value = inter;
-                        updateUI();
-                        
-                        pipSaveBtn.innerText = '>> GUARDADO <<';
-                        setTimeout(() => { pipSaveBtn.innerText = 'APLICAR CAMBIOS'; cfgPanel.classList.remove('open'); }, 1200);
-                    }
-                });
-                
-                // Clean up on close (Document PiP)
-                win.addEventListener('pagehide', () => {
-                    pipWin = null; pipPesoEl = null; pipLedContainer = null;
-                    pipQueue = []; pipIsRunning = false;
-                });
-            }
-            
-            function closePiP() {
-                if (pipWin) { pipWin.close(); pipWin = null; pipPesoEl = null; pipLedContainer = null; }
-            }
-            
-            // PiP marquee queue
-            function pipPlayQueue() {
-                if (pipIsRunning || pipQueue.length === 0 || !pipLedContainer || !pipWin || pipWin.closed) return;
-                pipIsRunning = true;
-                const m = pipQueue.shift();
-                const span = pipWin.document.createElement('span');
-                span.className = 'pip-led-text';
-                let baseColor = m.color === 'white' ? '#FFFFFF' : m.color;
-                span.style.color = '#FFFFFF';
-                span.style.textShadow = '0 0 5px #FFFFFF, 0 0 10px ' + baseColor + ', 0 0 20px ' + baseColor + ', 0 0 40px ' + baseColor;
-                span.innerText = m.text || " ";
-                pipLedContainer.innerHTML = '';
-                pipLedContainer.appendChild(span);
-                let dur = Math.max(4.0, (m.text || " ").length * 0.25);
-                span.style.animation = 'marquee ' + dur + 's linear forwards';
-                let to;
-                const onEnd = () => { if(to) clearTimeout(to); pipIsRunning = false; setTimeout(pipPlayQueue, 150); };
-                span.addEventListener('animationend', onEnd);
-                to = setTimeout(onEnd, (dur * 1000) + 1200);
+                window.open('/pip', 'nixie_pip', 'width=520,height=340,top=80,left=' + (screen.width - 560) + ',toolbar=no,menubar=no,scrollbars=no,resizable=yes,status=no,location=no');
             }
             
             document.addEventListener('keydown', (e) => { 
@@ -865,11 +638,6 @@ def index():
                     
                     document.getElementById('peso_txt').innerText = d.peso_visual;
                     
-                    // Update PiP peso
-                    if (pipWin && !pipWin.closed && pipPesoEl) {
-                        pipPesoEl.innerText = d.peso_visual;
-                    }
-                    
                     let lb = document.getElementById('log_bas');
                     let ls = document.getElementById('log_sem');
                     let autoScrollBas = (lb.scrollTop + lb.clientHeight) >= (lb.scrollHeight - 20);
@@ -900,12 +668,10 @@ def index():
                         d.historial_semaforo.forEach(m => {
                             if (m.id > lastId && m.text !== "") {
                                 queue.push({ text: m.text, color: m.color });
-                                if (pipWin && !pipWin.closed) pipQueue.push({ text: m.text, color: m.color });
                                 lastId = m.id;
                             }
                         });
                         playQueue();
-                        if (pipWin && !pipWin.closed) pipPlayQueue();
                     }
                 } catch(e) {}
                 setTimeout(tick, 500);
@@ -1173,6 +939,203 @@ def get_tole():
     if os.path.exists(img_path):
         return FileResponse(img_path)
     return HTMLResponse("")
+
+@app.get("/pip", response_class=HTMLResponse)
+def pip_view():
+    return """<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>NIXIE PiP</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: #010b14; overflow: hidden; display: flex; flex-direction: column;
+            height: 100vh; padding: 10px; font-family: 'Share Tech Mono', monospace; color: #c1c5c8;
+        }
+        #pip-top { display: flex; align-items: center; gap: 10px; flex-shrink: 0; margin-bottom: 6px; }
+        #pip-peso {
+            font-family: 'VT323', monospace; font-size: 1.5em;
+            color: #ffffff; text-shadow: 0 0 5px #fff, 0 0 10px #36b0c9, 0 0 20px #0a5da7;
+            letter-spacing: 4px; line-height: 1;
+            padding: 4px 10px; background: rgba(0,0,0,0.5); border-radius: 8px; flex: 1;
+            text-align: center;
+        }
+        #pip-cfg-btn {
+            background: rgba(54,176,201,0.1); color: #36b0c9; border: 1px solid rgba(54,176,201,0.4);
+            padding: 5px 10px; border-radius: 4px; cursor: pointer; font-family: 'Share Tech Mono';
+            font-size: 0.75em; font-weight: bold; letter-spacing: 1px; transition: all 0.2s;
+        }
+        #pip-cfg-btn:hover { background: rgba(54,176,201,0.3); border-color: #36b0c9; }
+        #pip-led {
+            background: rgba(2,6,12,0.9); border: 1px solid rgba(255,255,255,0.05);
+            flex-grow: 1; min-height: 0; overflow: hidden; position: relative;
+            display: flex; align-items: center; border-radius: 16px;
+            box-shadow: inset 0 0 20px rgba(0,0,0,1);
+        }
+        .pip-led-text {
+            white-space: nowrap; position: absolute; font-family: 'VT323', monospace;
+            font-size: clamp(3rem, 15vh, 6rem); font-weight: normal; left: 100%;
+            will-change: transform; color: #ffffff;
+            text-shadow: 0 0 5px #fff, 0 0 10px #36b0c9, 0 0 20px #0a5da7, 0 0 40px #002b49;
+            letter-spacing: 4px; z-index: 1;
+        }
+        @keyframes marquee { 0% { left: 100%; transform: translateX(0); } 100% { left: 0%; transform: translateX(-100%); } }
+        
+        #pip-config {
+            display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(1,11,20,0.97); z-index: 10; padding: 14px;
+            flex-direction: column; gap: 10px; overflow-y: auto;
+        }
+        #pip-config.open { display: flex; }
+        #pip-config h3 { color: #36b0c9; font-size: 0.9em; letter-spacing: 2px; margin-bottom: 4px; }
+        .pip-field { display: flex; flex-direction: column; gap: 3px; }
+        .pip-field label { font-size: 0.65em; color: #c1c5c8; letter-spacing: 1px; text-transform: uppercase; }
+        .pip-field select, .pip-field input {
+            background: rgba(0,0,0,0.6); border: 1px solid rgba(54,176,201,0.3); color: #36b0c9;
+            font-family: 'Share Tech Mono'; font-size: 0.85em; padding: 6px 8px; border-radius: 4px;
+            outline: none; width: 100%;
+        }
+        .pip-field select:focus, .pip-field input:focus { border-color: #36b0c9; }
+        .pip-row { display: flex; gap: 8px; }
+        .pip-row .pip-field { flex: 1; }
+        #pip-save-btn {
+            background: rgba(54,176,201,0.15); color: #36b0c9; border: 1px solid rgba(54,176,201,0.5);
+            padding: 8px; border-radius: 4px; cursor: pointer; font-family: 'Share Tech Mono';
+            font-size: 0.85em; font-weight: bold; letter-spacing: 2px; margin-top: auto; transition: all 0.2s;
+        }
+        #pip-save-btn:hover { background: rgba(54,176,201,0.3); }
+        #pip-back-btn {
+            background: transparent; color: #c1c5c8; border: 1px solid rgba(255,255,255,0.15);
+            padding: 6px 10px; border-radius: 4px; cursor: pointer; font-family: 'Share Tech Mono';
+            font-size: 0.7em; align-self: flex-end; transition: all 0.2s;
+        }
+        #pip-back-btn:hover { border-color: #36b0c9; color: #36b0c9; }
+    </style>
+</head>
+<body>
+    <div id="pip-top">
+        <div id="pip-peso">000.00</div>
+        <button id="pip-cfg-btn" onclick="toggleConfig()">&#9881; CONFIG</button>
+    </div>
+    <div id="pip-led"></div>
+    <div id="pip-config">
+        <button id="pip-back-btn" onclick="toggleConfig()">&#8592; VOLVER</button>
+        <h3>&#9881; CONFIGURACI&Oacute;N</h3>
+        <div class="pip-field">
+            <label>Modo de pesaje</label>
+            <select id="pip-modo" onchange="toggleModo()">
+                <option value="auto">AUTOM&Aacute;TICO</option>
+                <option value="manual">MANUAL</option>
+            </select>
+        </div>
+        <div class="pip-field" id="pip-manual-field" style="display:none;">
+            <label>Peso manual (tons)</label>
+            <input type="number" id="pip-manual" value="70">
+        </div>
+        <div class="pip-row" id="pip-auto-fields">
+            <div class="pip-field">
+                <label>M&iacute;nimo</label>
+                <input type="number" id="pip-rmin" value="60">
+            </div>
+            <div class="pip-field">
+                <label>M&aacute;ximo</label>
+                <input type="number" id="pip-rmax" value="95">
+            </div>
+        </div>
+        <div class="pip-field">
+            <label>Intervalo datos (seg)</label>
+            <input type="number" id="pip-inter" step="0.1" value="1.0">
+        </div>
+        <button id="pip-save-btn" onclick="saveConfig()">APLICAR CAMBIOS</button>
+    </div>
+    <script>
+        let queue = [], isRunning = false, lastId = -1, firstTick = true;
+
+        function toggleConfig() {
+            document.getElementById('pip-config').classList.toggle('open');
+            if (document.getElementById('pip-config').classList.contains('open')) loadConfig();
+        }
+        function toggleModo() {
+            const m = document.getElementById('pip-modo').value === 'manual';
+            document.getElementById('pip-manual-field').style.display = m ? 'flex' : 'none';
+            document.getElementById('pip-auto-fields').style.display = m ? 'none' : 'flex';
+        }
+        async function loadConfig() {
+            try {
+                const r = await fetch('/status');
+                const d = await r.json();
+                if (d.config) {
+                    document.getElementById('pip-modo').value = d.config.modo;
+                    document.getElementById('pip-manual').value = d.config.valor_manual;
+                    document.getElementById('pip-rmin').value = d.config.rango[0];
+                    document.getElementById('pip-rmax').value = d.config.rango[1];
+                    document.getElementById('pip-inter').value = d.config.intervalo_bascula;
+                    toggleModo();
+                }
+            } catch(e) {}
+        }
+        async function saveConfig() {
+            const btn = document.getElementById('pip-save-btn');
+            const modo = document.getElementById('pip-modo').value;
+            const manual_val = parseInt(document.getElementById('pip-manual').value);
+            const min = parseInt(document.getElementById('pip-rmin').value);
+            const max = parseInt(document.getElementById('pip-rmax').value);
+            const inter = parseFloat(document.getElementById('pip-inter').value);
+            if (modo === 'auto' && min > max) {
+                btn.innerText = '\\u26a0 MIN > MAX'; setTimeout(() => btn.innerText = 'APLICAR CAMBIOS', 2000); return;
+            }
+            const p = { modo, valor_manual: manual_val, rango: [min, max], intervalo_bascula: inter };
+            const res = await fetch('/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(p) });
+            if (res.ok) {
+                btn.innerText = '>> GUARDADO <<';
+                setTimeout(() => { btn.innerText = 'APLICAR CAMBIOS'; document.getElementById('pip-config').classList.remove('open'); }, 1200);
+            }
+        }
+        async function tick() {
+            try {
+                const r = await fetch('/status');
+                const d = await r.json();
+                document.getElementById('pip-peso').innerText = d.peso_visual;
+                if (firstTick) {
+                    firstTick = false;
+                    lastId = d.historial_semaforo && d.historial_semaforo.length > 0 ? d.historial_semaforo[d.historial_semaforo.length-1].id : -1;
+                } else if (d.historial_semaforo) {
+                    let ids = d.historial_semaforo.map(x => x.id);
+                    if (ids.length > 0 && lastId > Math.max(...ids)) lastId = -1;
+                    d.historial_semaforo.forEach(m => {
+                        if (m.id > lastId && m.text !== '') { queue.push({text: m.text, color: m.color}); lastId = m.id; }
+                    });
+                    playQueue();
+                }
+            } catch(e) {}
+            setTimeout(tick, 500);
+        }
+        function playQueue() {
+            if (isRunning || queue.length === 0) return;
+            isRunning = true;
+            const m = queue.shift();
+            const container = document.getElementById('pip-led');
+            const span = document.createElement('span');
+            span.className = 'pip-led-text';
+            let baseColor = m.color === 'white' ? '#FFFFFF' : m.color;
+            span.style.color = '#FFFFFF';
+            span.style.textShadow = '0 0 5px #FFFFFF, 0 0 10px '+baseColor+', 0 0 20px '+baseColor+', 0 0 40px '+baseColor;
+            span.innerText = m.text || ' ';
+            container.innerHTML = '';
+            container.appendChild(span);
+            let dur = Math.max(4.0, (m.text||' ').length * 0.25);
+            span.style.animation = 'marquee '+dur+'s linear forwards';
+            let to;
+            const onEnd = () => { if(to) clearTimeout(to); isRunning = false; setTimeout(playQueue, 150); };
+            span.addEventListener('animationend', onEnd);
+            to = setTimeout(onEnd, (dur*1000)+1200);
+        }
+        tick();
+    </script>
+</body>
+</html>"""
 
 @app.get("/status")
 def get_status():
