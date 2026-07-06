@@ -143,17 +143,14 @@ def vista_semaforo():
 <body>
     <div class="top-bar">
         <div class="logo-container">
-            <img src="/logo" alt="SmartFlow">
-            <span class="logo-title">SMARTFLOW DISPLAY</span>
+            <img src="/logo" alt="SmartFlow" style="height: 40px;">
         </div>
         <div class="top-buttons">
             <button class="btn-top" onclick="openPiP()">
-                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><rect x="2" y="3" width="20" height="14" rx="2"/><rect x="11" y="10" width="9" height="7" rx="1" fill="currentColor" opacity="0.3"/></svg>
-                PiP
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><rect x="2" y="3" width="20" height="14" rx="2"/><rect x="11" y="10" width="9" height="7" rx="1" fill="currentColor" opacity="0.3"/></svg>
             </button>
             <button class="btn-top" onclick="toggleInfo()">
-                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                INFO
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
             </button>
         </div>
     </div>
