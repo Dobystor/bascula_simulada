@@ -143,7 +143,8 @@ def vista_semaforo():
 <body>
     <div class="top-bar">
         <div class="logo-container">
-            <img src="/logo" alt="SmartFlow" style="height: 40px;">
+            <img src="/logo" alt="SmartFlow" style="height: 48px;">
+            <span class="logo-title">SMARTFLOW DISPLAY</span>
         </div>
         <div class="top-buttons">
             <button class="btn-top" onclick="openPiP()">
