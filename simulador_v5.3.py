@@ -1622,6 +1622,7 @@ def generate_self_signed_cert():
     
     os.makedirs(cert_dir, exist_ok=True)
     
+    # Intentar con openssl CLI
     try:
         ip = get_local_ip()
         subprocess.run([
@@ -1632,12 +1633,57 @@ def generate_self_signed_cert():
             "-addext", f"subjectAltName=IP:{ip},IP:127.0.0.1,DNS:localhost"
         ], check=True, capture_output=True)
         print(f"[SSL] Certificado generado en {cert_dir}")
+        return cert_file, key_file
+    except Exception:
+        pass
+    
+    # Fallback: generar con Python (cryptography)
+    try:
+        from cryptography import x509
+        from cryptography.x509.oid import NameOID
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from datetime import timedelta
+        import ipaddress
+        
+        ip = get_local_ip()
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        
+        subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, ip)])
+        
+        san = x509.SubjectAlternativeName([
+            x509.IPAddress(ipaddress.ip_address(ip)),
+            x509.IPAddress(ipaddress.ip_address("127.0.0.1")),
+            x509.DNSName("localhost"),
+        ])
+        
+        cert = (
+            x509.CertificateBuilder()
+            .subject_name(subject)
+            .issuer_name(issuer)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(datetime.utcnow())
+            .not_valid_after(datetime.utcnow() + timedelta(days=365))
+            .add_extension(san, critical=False)
+            .sign(key, hashes.SHA256())
+        )
+        
+        with open(key_file, "wb") as f:
+            f.write(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.TraditionalOpenSSL, serialization.NoEncryption()))
+        with open(cert_file, "wb") as f:
+            f.write(cert.public_bytes(serialization.Encoding.PEM))
+        
+        print(f"[SSL] Certificado generado con Python en {cert_dir}")
+        return cert_file, key_file
+    except ImportError:
+        print("[SSL] No se pudo generar certificado: instala 'cryptography' (pip install cryptography) o 'openssl'")
+        print("[SSL] Arrancando sin HTTPS (PiP nativo no disponible)")
+        return None, None
     except Exception as e:
         print(f"[SSL] No se pudo generar certificado: {e}")
         print("[SSL] Arrancando sin HTTPS (PiP nativo no disponible)")
         return None, None
-    
-    return cert_file, key_file
 
 if __name__ == "__main__":
     if MODO_VISTA == "bascula_semaforo":
