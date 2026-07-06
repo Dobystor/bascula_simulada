@@ -36,7 +36,7 @@ BASCULA_PORT, SEMAFORO_PORT, WEB_PORT = 4001, 44001, 8080
 # --- MODO DE VISTA ---
 # "bascula_semaforo" = interfaz completa (báscula + semáforo + controles)
 # "semaforo" = solo monitor de semáforo (pantalla completa tipo display)
-MODO_VISTA = "bascula_semaforo"
+MODO_VISTA = "semaforo"
 
 config = {"modo": "auto", "valor_manual": 70, "rango": [60, 95], "intervalo_bascula": 1.0}
 peso_actual = 0
@@ -113,7 +113,7 @@ def vista_semaforo():
         }
         .led-text {
             white-space: nowrap; position: absolute; font-family: 'VT323', monospace;
-            font-size: clamp(5rem, 18vh, 14rem); font-weight: normal; left: 100%;
+            font-size: clamp(8rem, 30vh, 22rem); font-weight: normal; left: 100%;
             will-change: transform; color: var(--nixie-core);
             text-shadow: var(--neon-shadow); letter-spacing: 8px; z-index: 1;
         }
@@ -1497,7 +1497,7 @@ def pip_semaforo_view():
         body { background: #010b14; height: 100vh; display: flex; align-items: center; overflow: hidden; font-family: monospace; }
         #led { width: 100%; height: 100%; position: relative; display: flex; align-items: center; overflow: hidden; }
         .led-text { white-space: nowrap; position: absolute; font-family: 'VT323', monospace;
-            font-size: clamp(3rem, 20vh, 8rem); left: 100%; color: #ffffff;
+            font-size: clamp(3rem, 25vh, 10rem); left: 100%; color: #ffffff;
             text-shadow: 0 0 5px #fff, 0 0 10px #36b0c9, 0 0 20px #0a5da7, 0 0 40px #002b49;
             letter-spacing: 5px; }
         @keyframes marquee { 0% { left: 100%; transform: translateX(0); } 100% { left: 0%; transform: translateX(-100%); } }
