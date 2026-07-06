@@ -33,6 +33,11 @@ def get_mac_address():
 HOST_IP = get_local_ip()
 BASCULA_PORT, SEMAFORO_PORT, WEB_PORT = 4001, 44001, 8080
 
+# --- MODO DE VISTA ---
+# "bascula_semaforo" = interfaz completa (báscula + semáforo + controles)
+# "semaforo" = solo monitor de semáforo (pantalla completa tipo display)
+MODO_VISTA = "bascula_semaforo"
+
 config = {"modo": "auto", "valor_manual": 70, "rango": [60, 95], "intervalo_bascula": 1.0}
 peso_actual = 0
 historial_semaforo = []
@@ -46,8 +51,223 @@ def añadir_log(lista, mensaje):
     lista.append(f"[{t}] {mensaje}")
     if len(lista) > 100: lista.pop(0)
 
+def vista_semaforo():
+    return """<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>SMARTFLOW DISPLAY</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --brand-cyan: #36b0c9;
+            --brand-blue: #0a5da7;
+            --brand-navy: #002b49;
+            --nixie-core: #ffffff;
+            --neon-shadow: 0 0 5px #fff, 0 0 10px #36b0c9, 0 0 20px #0a5da7, 0 0 40px #002b49;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: #010b14 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="%23010b14"/><rect width="1" height="1" fill="%23001a2e"/></svg>');
+            height: 100vh; overflow: hidden; display: flex; flex-direction: column;
+            font-family: 'Share Tech Mono', monospace; color: #c1c5c8; padding: 20px;
+        }
+        
+        /* Top Bar */
+        .top-bar {
+            display: flex; align-items: center; justify-content: space-between;
+            flex-shrink: 0; margin-bottom: 15px; height: 45px;
+        }
+        .logo-container { display: flex; align-items: center; gap: 12px; }
+        .logo-container img { height: 32px; opacity: 0.85; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); }
+        .logo-title { font-size: 0.85em; color: var(--brand-cyan); letter-spacing: 3px; text-shadow: 0 0 8px rgba(54,176,201,0.4); }
+        
+        .top-buttons { display: flex; gap: 10px; }
+        .btn-top {
+            background: rgba(54,176,201,0.08); color: var(--brand-cyan); border: 1px solid rgba(54,176,201,0.3);
+            padding: 8px 14px; border-radius: 5px; cursor: pointer; font-family: 'Share Tech Mono';
+            font-size: 0.75em; font-weight: bold; letter-spacing: 1px; transition: all 0.2s;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .btn-top:hover { background: rgba(54,176,201,0.2); border-color: var(--brand-cyan); box-shadow: 0 0 12px rgba(54,176,201,0.3); }
+        
+        /* Monitor principal */
+        .monitor-full {
+            flex-grow: 1; min-height: 0;
+            background: rgba(2,6,12,0.85); border: 2px solid rgba(255,255,255,0.05);
+            border-radius: 30px; overflow: hidden; position: relative;
+            display: flex; align-items: center;
+            box-shadow: inset 0 0 40px rgba(0,0,0,1), 0 10px 30px rgba(0,0,0,0.9);
+        }
+        .monitor-full::before {
+            content: ''; position: absolute; top: 3%; left: 2%; right: 2%; height: 25%;
+            background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 100%);
+            border-radius: 20px 20px 0 0; pointer-events: none; z-index: 2;
+        }
+        .monitor-full::after {
+            content: ''; position: absolute; top:0; left:0; right:0; bottom:0;
+            background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.2) 3px, rgba(0,0,0,0.2) 4px);
+            pointer-events: none; opacity: 0.5; mix-blend-mode: overlay;
+        }
+        .led-text {
+            white-space: nowrap; position: absolute; font-family: 'VT323', monospace;
+            font-size: clamp(5rem, 18vh, 14rem); font-weight: normal; left: 100%;
+            will-change: transform; color: var(--nixie-core);
+            text-shadow: var(--neon-shadow); letter-spacing: 8px; z-index: 1;
+        }
+        @keyframes marquee { 0% { left: 100%; transform: translateX(0); } 100% { left: 0%; transform: translateX(-100%); } }
+        
+        /* Info Overlay */
+        .info-overlay {
+            display: none; position: fixed; top: 0; right: 0; bottom: 0;
+            width: 320px; background: rgba(0,20,40,0.95); backdrop-filter: blur(10px);
+            z-index: 1000; padding: 30px 20px; flex-direction: column; gap: 15px;
+            border-left: 1px solid rgba(54,176,201,0.3);
+            box-shadow: -10px 0 30px rgba(0,0,0,0.8);
+        }
+        .info-overlay.open { display: flex; }
+        .info-overlay h3 { color: var(--brand-cyan); font-size: 1em; letter-spacing: 2px; margin-bottom: 5px; }
+        .info-item { display: flex; flex-direction: column; gap: 2px; }
+        .info-item small { font-size: 0.6em; color: #c1c5c8; opacity: 0.7; letter-spacing: 1px; text-transform: uppercase; }
+        .info-item span { font-size: 0.9em; color: var(--brand-cyan); }
+        .info-close {
+            background: transparent; color: #c1c5c8; border: 1px solid rgba(255,255,255,0.15);
+            padding: 8px 14px; border-radius: 4px; cursor: pointer; font-family: 'Share Tech Mono';
+            font-size: 0.75em; margin-top: auto; transition: all 0.2s;
+        }
+        .info-close:hover { border-color: var(--brand-cyan); color: var(--brand-cyan); }
+    </style>
+</head>
+<body>
+    <div class="top-bar">
+        <div class="logo-container">
+            <img src="/logo" alt="SmartFlow">
+            <span class="logo-title">SMARTFLOW DISPLAY</span>
+        </div>
+        <div class="top-buttons">
+            <button class="btn-top" onclick="openPiP()">
+                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><rect x="2" y="3" width="20" height="14" rx="2"/><rect x="11" y="10" width="9" height="7" rx="1" fill="currentColor" opacity="0.3"/></svg>
+                PiP
+            </button>
+            <button class="btn-top" onclick="toggleInfo()">
+                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                INFO
+            </button>
+        </div>
+    </div>
+    
+    <div class="monitor-full" id="led_cont"></div>
+    
+    <div class="info-overlay" id="infoPanel">
+        <h3>&#9432; INFORMACI&Oacute;N DEL SISTEMA</h3>
+        <div class="info-item"><small>IP ADDRESS</small><span>""" + str(get_local_ip()) + """</span></div>
+        <div class="info-item"><small>MAC ADDRESS</small><span>""" + str(get_mac_address()) + """</span></div>
+        <div class="info-item"><small>PUERTO SEM&Aacute;FORO</small><span>""" + str(SEMAFORO_PORT) + """</span></div>
+        <div class="info-item"><small>PUERTO WEB</small><span>""" + str(WEB_PORT) + """</span></div>
+        <div class="info-item"><small>MODO</small><span>S&Oacute;LO SEM&Aacute;FORO</span></div>
+        <button class="info-close" onclick="toggleInfo()">CERRAR</button>
+    </div>
+    
+    <script>
+        let queue = [], isRunning = false, lastId = -1, firstTick = true;
+        
+        function toggleInfo() {
+            document.getElementById('infoPanel').classList.toggle('open');
+        }
+        
+        async function openPiP() {
+            if ('documentPictureInPicture' in window) {
+                try {
+                    const pipWin = await documentPictureInPicture.requestWindow({ width: 580, height: 250 });
+                    const style = pipWin.document.createElement('style');
+                    style.textContent = `
+                        @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+                        * { box-sizing: border-box; margin: 0; padding: 0; }
+                        body { background: #010b14; height: 100vh; display: flex; align-items: center; overflow: hidden; }
+                        #pip-led { width: 100%; height: 100%; position: relative; display: flex; align-items: center; overflow: hidden; }
+                        .led-text { white-space: nowrap; position: absolute; font-family: 'VT323', monospace;
+                            font-size: clamp(3rem, 20vh, 8rem); left: 100%; color: #ffffff;
+                            text-shadow: 0 0 5px #fff, 0 0 10px #36b0c9, 0 0 20px #0a5da7, 0 0 40px #002b49;
+                            letter-spacing: 5px; }
+                        @keyframes marquee { 0% { left: 100%; transform: translateX(0); } 100% { left: 0%; transform: translateX(-100%); } }
+                    `;
+                    pipWin.document.head.appendChild(style);
+                    pipWin.document.title = 'SmartFlow PiP';
+                    pipWin.document.body.innerHTML = '<div id="pip-led"></div>';
+                    const pLed = pipWin.document.getElementById('pip-led');
+                    let pQ=[], pR=false, pLast=-1, pF=true;
+                    async function pTick(){
+                        try{const r=await fetch('/status');const d=await r.json();
+                            if(pF){pF=false;pLast=d.historial_semaforo&&d.historial_semaforo.length>0?d.historial_semaforo[d.historial_semaforo.length-1].id:-1;}
+                            else if(d.historial_semaforo){let ids=d.historial_semaforo.map(x=>x.id);if(ids.length>0&&pLast>Math.max(...ids))pLast=-1;
+                                d.historial_semaforo.forEach(m=>{if(m.id>pLast&&m.text!==''){pQ.push({text:m.text,color:m.color});pLast=m.id;}});pPlay();}
+                        }catch(e){}setTimeout(pTick,500);}
+                    function pPlay(){if(pR||pQ.length===0)return;pR=true;const m=pQ.shift();
+                        const span=pipWin.document.createElement('span');span.className='led-text';
+                        let bc=m.color==='white'?'#FFF':m.color;span.style.color='#FFF';
+                        span.style.textShadow='0 0 5px #FFF,0 0 10px '+bc+',0 0 20px '+bc+',0 0 40px '+bc;
+                        span.innerText=m.text||' ';pLed.innerHTML='';pLed.appendChild(span);
+                        let dur=Math.max(4,(m.text||' ').length*0.25);span.style.animation='marquee '+dur+'s linear forwards';
+                        let to;const onEnd=()=>{if(to)clearTimeout(to);pR=false;setTimeout(pPlay,150);};
+                        span.addEventListener('animationend',onEnd);to=setTimeout(onEnd,(dur*1000)+1200);}
+                    pTick();
+                    return;
+                } catch(e) {}
+            }
+            window.open('/pip-semaforo', 'sf_pip', 'width=580,height=250,top=80,left='+(screen.width-620)+',toolbar=no,menubar=no,scrollbars=no,resizable=yes');
+        }
+        
+        async function tick() {
+            try {
+                const r = await fetch('/status');
+                const d = await r.json();
+                if (firstTick) {
+                    firstTick = false;
+                    lastId = d.historial_semaforo && d.historial_semaforo.length > 0 ? d.historial_semaforo[d.historial_semaforo.length-1].id : -1;
+                } else if (d.historial_semaforo) {
+                    let ids = d.historial_semaforo.map(x => x.id);
+                    if (ids.length > 0 && lastId > Math.max(...ids)) lastId = -1;
+                    d.historial_semaforo.forEach(m => {
+                        if (m.id > lastId && m.text !== '') { queue.push({text: m.text, color: m.color}); lastId = m.id; }
+                    });
+                    playQueue();
+                }
+            } catch(e) {}
+            setTimeout(tick, 500);
+        }
+        
+        function playQueue() {
+            if (isRunning || queue.length === 0) return;
+            isRunning = true;
+            const m = queue.shift();
+            const container = document.getElementById('led_cont');
+            const span = document.createElement('span');
+            span.className = 'led-text';
+            let baseColor = m.color === 'white' ? '#FFFFFF' : m.color;
+            span.style.color = '#FFFFFF';
+            span.style.textShadow = '0 0 5px #FFFFFF, 0 0 10px ' + baseColor + ', 0 0 20px ' + baseColor + ', 0 0 40px ' + baseColor;
+            span.innerText = m.text || ' ';
+            container.innerHTML = '';
+            container.appendChild(span);
+            let dur = Math.max(5.0, (m.text || ' ').length * 0.3);
+            span.style.animation = 'marquee ' + dur + 's linear forwards';
+            let to;
+            const onEnd = () => { if(to) clearTimeout(to); isRunning = false; setTimeout(playQueue, 200); };
+            span.addEventListener('animationend', onEnd);
+            to = setTimeout(onEnd, (dur * 1000) + 1200);
+        }
+        
+        tick();
+    </script>
+</body>
+</html>"""
+
 @app.get("/", response_class=HTMLResponse)
 def index():
+    if MODO_VISTA == "semaforo":
+        return HTMLResponse(content=vista_semaforo())
     content = """
     <html>
     <head>
@@ -1264,6 +1484,47 @@ def pip_view():
 </body>
 </html>"""
 
+@app.get("/pip-semaforo", response_class=HTMLResponse)
+def pip_semaforo_view():
+    return """<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>SmartFlow PiP</title>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: #010b14; height: 100vh; display: flex; align-items: center; overflow: hidden; font-family: monospace; }
+        #led { width: 100%; height: 100%; position: relative; display: flex; align-items: center; overflow: hidden; }
+        .led-text { white-space: nowrap; position: absolute; font-family: 'VT323', monospace;
+            font-size: clamp(3rem, 20vh, 8rem); left: 100%; color: #ffffff;
+            text-shadow: 0 0 5px #fff, 0 0 10px #36b0c9, 0 0 20px #0a5da7, 0 0 40px #002b49;
+            letter-spacing: 5px; }
+        @keyframes marquee { 0% { left: 100%; transform: translateX(0); } 100% { left: 0%; transform: translateX(-100%); } }
+    </style>
+</head>
+<body>
+    <div id="led"></div>
+    <script>
+        let queue=[], isRunning=false, lastId=-1, firstTick=true;
+        async function tick(){try{const r=await fetch('/status');const d=await r.json();
+            if(firstTick){firstTick=false;lastId=d.historial_semaforo&&d.historial_semaforo.length>0?d.historial_semaforo[d.historial_semaforo.length-1].id:-1;}
+            else if(d.historial_semaforo){let ids=d.historial_semaforo.map(x=>x.id);if(ids.length>0&&lastId>Math.max(...ids))lastId=-1;
+                d.historial_semaforo.forEach(m=>{if(m.id>lastId&&m.text!==''){queue.push({text:m.text,color:m.color});lastId=m.id;}});playQueue();}
+        }catch(e){}setTimeout(tick,500);}
+        function playQueue(){if(isRunning||queue.length===0)return;isRunning=true;const m=queue.shift();
+            const el=document.getElementById('led');const span=document.createElement('span');span.className='led-text';
+            let bc=m.color==='white'?'#FFF':m.color;span.style.color='#FFF';
+            span.style.textShadow='0 0 5px #FFF,0 0 10px '+bc+',0 0 20px '+bc+',0 0 40px '+bc;
+            span.innerText=m.text||' ';el.innerHTML='';el.appendChild(span);
+            let dur=Math.max(4,(m.text||' ').length*0.25);span.style.animation='marquee '+dur+'s linear forwards';
+            let to;const onEnd=()=>{if(to)clearTimeout(to);isRunning=false;setTimeout(playQueue,150);};
+            span.addEventListener('animationend',onEnd);to=setTimeout(onEnd,(dur*1000)+1200);}
+        tick();
+    </script>
+</body>
+</html>"""
+
 @app.get("/status")
 def get_status():
     return {"peso_visual": f"{(peso_actual * 100) / 100:06.2f}", "historial_semaforo": historial_semaforo, "logs_bas": logs_bascula, "logs_sem": logs_semaforo, "config": config}
@@ -1379,8 +1640,11 @@ def generate_self_signed_cert():
     return cert_file, key_file
 
 if __name__ == "__main__":
-    threading.Thread(target=server_bascula, daemon=True).start()
+    if MODO_VISTA == "bascula_semaforo":
+        threading.Thread(target=server_bascula, daemon=True).start()
     threading.Thread(target=server_semaforo, daemon=True).start()
+    
+    print(f"[MODO] {MODO_VISTA.upper()}")
     
     cert_file, key_file = generate_self_signed_cert()
     
