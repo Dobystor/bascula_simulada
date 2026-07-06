@@ -113,7 +113,7 @@ def vista_semaforo():
         }
         .led-text {
             white-space: nowrap; position: absolute; font-family: 'VT323', monospace;
-            font-size: clamp(10rem, 45vh, 30rem); font-weight: normal; left: 100%;
+            font-size: clamp(10rem, 60vh, 40rem); font-weight: normal; left: 100%;
             will-change: transform; color: var(--nixie-core);
             text-shadow: var(--neon-shadow); letter-spacing: 8px; z-index: 1;
         }
