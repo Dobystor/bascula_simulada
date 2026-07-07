@@ -36,7 +36,7 @@ BASCULA_PORT, SEMAFORO_PORT, WEB_PORT = 4001, 44001, 8080
 # --- MODO DE VISTA ---
 # "bascula_semaforo" = interfaz completa (báscula + semáforo + controles)
 # "semaforo" = solo monitor de semáforo (pantalla completa tipo display)
-MODO_VISTA = "semaforo"
+MODO_VISTA = "bascula_semaforo"
 
 config = {"modo": "auto", "valor_manual": 70, "rango": [60, 95], "intervalo_bascula": 1.0}
 peso_actual = 0
@@ -1591,7 +1591,7 @@ def atender_cliente_semaforo(conn, addr):
                         añadir_log(logs_semaforo, f"DEBUG: Error JSON -> {str(e)}")
                 
                 try:
-                    conn.sendall(b"OK\n")
+                    conn.sendall(b"OK\r\n")
                 except Exception as e:
                     añadir_log(logs_semaforo, f"DEBUG: Error enviando OK -> {str(e)}")
                     break
