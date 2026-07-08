@@ -1545,7 +1545,7 @@ def atender_cliente_bascula(conn, addr):
             while True:
                 p = round(random.uniform(config["rango"][0], config["rango"][1]), 2) if config["modo"] == "auto" else config["valor_manual"]
                 peso_actual = p
-                conn.sendall(f"\x02+{p/100:06.2f} tons\r\n".encode('ascii'))
+                conn.sendall(f"\x02+{p/100:07.4f} tons\r\n".encode('ascii'))
                 añadir_log(logs_bascula, f"TX({addr[0][-2:]}) -> {p:06.2f}")
                 time.sleep(config.get("intervalo_bascula", 1.0))
     except: pass
