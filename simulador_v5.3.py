@@ -38,7 +38,7 @@ BASCULA_PORT, SEMAFORO_PORT, WEB_PORT = 4001, 44001, 8080
 # "semaforo" = solo monitor de semáforo (pantalla completa tipo display)
 MODO_VISTA = "bascula_semaforo"
 
-config = {"modo": "auto", "valor_manual": 70, "rango": [60, 95], "intervalo_bascula": 1.0}
+config = {"modo": "auto", "valor_manual": 70.00, "rango": [60.00, 95.00], "intervalo_bascula": 1.0}
 peso_actual = 0
 historial_semaforo = []
 logs_bascula, logs_semaforo = [], []
@@ -646,7 +646,7 @@ def index():
                     <div id="ui-manual" class="hidden animate-in">
                         <div class="input-group">
                             <label>PESO MANUAL (TONS)</label>
-                            <input type="number" id="manual" value="70">
+                            <input type="number" id="manual" step="0.01" value="70.00">
                         </div>
                     </div>
 
@@ -654,11 +654,11 @@ def index():
                         <div class="grid-2">
                             <div class="input-group">
                                 <label>MÍNIMO</label>
-                                <input type="number" id="rmin" value="60">
+                                <input type="number" id="rmin" step="0.01" value="60.00">
                             </div>
                             <div class="input-group">
                                 <label>MÁXIMO</label>
-                                <input type="number" id="rmax" value="95">
+                                <input type="number" id="rmax" step="0.01" value="95.00">
                             </div>
                         </div>
                     </div>
@@ -822,8 +822,8 @@ def index():
                                 <button id="pip-back-btn">← VOLVER</button>
                                 <h3>⚙ CONFIGURACIÓN</h3>
                                 <div class="pip-field"><label>Modo</label><select id="pip-modo"><option value="auto">AUTOMÁTICO</option><option value="manual">MANUAL</option></select></div>
-                                <div class="pip-field" id="pip-manual-field" style="display:none;"><label>Peso manual</label><input type="number" id="pip-manual" value="70"></div>
-                                <div class="pip-row" id="pip-auto-fields"><div class="pip-field"><label>Mínimo</label><input type="number" id="pip-rmin" value="60"></div><div class="pip-field"><label>Máximo</label><input type="number" id="pip-rmax" value="95"></div></div>
+                                <div class="pip-field" id="pip-manual-field" style="display:none;"><label>Peso manual</label><input type="number" id="pip-manual" step="0.01" value="70.00"></div>
+                                <div class="pip-row" id="pip-auto-fields"><div class="pip-field"><label>Mínimo</label><input type="number" id="pip-rmin" step="0.01" value="60.00"></div><div class="pip-field"><label>Máximo</label><input type="number" id="pip-rmax" step="0.01" value="95.00"></div></div>
                                 <div class="pip-field"><label>Intervalo (seg)</label><input type="number" id="pip-inter" step="0.1" value="1.0"></div>
                                 <button id="pip-save-btn">APLICAR CAMBIOS</button>
                             </div>
@@ -937,7 +937,7 @@ def index():
                 createConfetti(rect.left + rect.width/2, rect.top + rect.height/2);
                 
                 let modo = document.getElementById('modo').value;
-                let manual_val = parseInt(document.getElementById('manual').value);
+                let manual_val = parseFloat(document.getElementById('manual').value);
                 
                 if (modo === 'manual' && manual_val === 666) {
                     const img = document.getElementById('toleImg');
@@ -951,8 +951,8 @@ def index():
                     return; // Interceptar
                 }
                 
-                let min = parseInt(document.getElementById('rmin').value);
-                let max = parseInt(document.getElementById('rmax').value);
+                let min = parseFloat(document.getElementById('rmin').value);
+                let max = parseFloat(document.getElementById('rmax').value);
                 if (modo === 'auto' && min > max) {
                     alert('ERROR: El mínimo no puede ser mayor al máximo.');
                     return;
@@ -1377,16 +1377,16 @@ def pip_view():
         </div>
         <div class="pip-field" id="pip-manual-field" style="display:none;">
             <label>Peso manual (tons)</label>
-            <input type="number" id="pip-manual" value="70">
+            <input type="number" id="pip-manual" step="0.01" value="70.00">
         </div>
         <div class="pip-row" id="pip-auto-fields">
             <div class="pip-field">
                 <label>M&iacute;nimo</label>
-                <input type="number" id="pip-rmin" value="60">
+                <input type="number" id="pip-rmin" step="0.01" value="60.00">
             </div>
             <div class="pip-field">
                 <label>M&aacute;ximo</label>
-                <input type="number" id="pip-rmax" value="95">
+                <input type="number" id="pip-rmax" step="0.01" value="95.00">
             </div>
         </div>
         <div class="pip-field">
@@ -1424,9 +1424,9 @@ def pip_view():
         async function saveConfig() {
             const btn = document.getElementById('pip-save-btn');
             const modo = document.getElementById('pip-modo').value;
-            const manual_val = parseInt(document.getElementById('pip-manual').value);
-            const min = parseInt(document.getElementById('pip-rmin').value);
-            const max = parseInt(document.getElementById('pip-rmax').value);
+            const manual_val = parseFloat(document.getElementById('pip-manual').value);
+            const min = parseFloat(document.getElementById('pip-rmin').value);
+            const max = parseFloat(document.getElementById('pip-rmax').value);
             const inter = parseFloat(document.getElementById('pip-inter').value);
             if (modo === 'auto' && min > max) {
                 btn.innerText = '\\u26a0 MIN > MAX'; setTimeout(() => btn.innerText = 'APLICAR CAMBIOS', 2000); return;
@@ -1525,12 +1525,14 @@ def pip_semaforo_view():
 
 @app.get("/status")
 def get_status():
-    return {"peso_visual": f"{(peso_actual * 100) / 100:06.2f}", "historial_semaforo": historial_semaforo, "logs_bas": logs_bascula, "logs_sem": logs_semaforo, "config": config}
+    return {"peso_visual": f"{peso_actual:06.2f}", "historial_semaforo": historial_semaforo, "logs_bas": logs_bascula, "logs_sem": logs_semaforo, "config": config}
 
 @app.post("/config")
 async def set_config(request: Request):
     global config
     data = await request.json()
+    data["valor_manual"] = float(data.get("valor_manual", 70))
+    data["rango"] = [float(data["rango"][0]), float(data["rango"][1])]
     if data["rango"][0] > data["rango"][1]: data["rango"][0] = data["rango"][1]
     config = data
     return {"status": "ok"}
@@ -1541,10 +1543,10 @@ def atender_cliente_bascula(conn, addr):
     try:
         with conn:
             while True:
-                p = random.randint(config["rango"][0], config["rango"][1]) if config["modo"] == "auto" else config["valor_manual"]
+                p = round(random.uniform(config["rango"][0], config["rango"][1]), 2) if config["modo"] == "auto" else config["valor_manual"]
                 peso_actual = p
-                conn.sendall(f"\x02+{p/100:06.2f} tons\r\n".encode('ascii'))
-                añadir_log(logs_bascula, f"TX({addr[0][-2:]}) -> {p/100:06.2f}")
+                conn.sendall(f"\x02+{p:06.2f} tons\r\n".encode('ascii'))
+                añadir_log(logs_bascula, f"TX({addr[0][-2:]}) -> {p:06.2f}")
                 time.sleep(config.get("intervalo_bascula", 1.0))
     except: pass
 
